@@ -1,0 +1,18 @@
+# This file was generated using idf.py save-defconfig. It can be edited manually.
+# Espressif IoT Development Framework (ESP-IDF) Project Minimal Configuration
+#
+CONFIG_USB_HOST_HUBS_SUPPORTED=y
+
+# Flash size: ESP32-S3 USB-OTG boards typically 8MB. App (LVGL+WiFi+HTTPS+cJSON+littlefs) ~1.9MB.
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="8MB"
+
+# Custom partition table (factory 3M + littlefs wuhe_bak backup partition)
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+
+# Debug-only: bypass TLS cert verification for local self-signed debug server.
+# REMOVE before any production build.
+CONFIG_WUHE_SKIP_CERT_VALIDATE=y
+CONFIG_ESP_TLS_INSECURE=y
+CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY=y

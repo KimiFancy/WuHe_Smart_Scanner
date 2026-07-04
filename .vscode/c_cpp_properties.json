@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "name": "ESP-IDF",
+            "compilerPath": "/home/kimi/.espressif/tools/xtensa-esp-elf/esp-15.2.0_20251204/xtensa-esp-elf/bin/xtensa-esp32s3-elf-gcc",
+            "compileCommands": [
+                "${config:idf.buildPath}/compile_commands.json"
+            ],
+            "intelliSenseMode": "gcc-x86",
+            "includePath": [
+                "${workspaceFolder}/**"
+                // "/home/kimi/.espressif/v6.0.1/esp-idf/components/**",
+                // "/home/kimi/.espressif/v6.0.1/esp-idf/components/esp_timer/include"
+            ],
+            "browse": {
+                "path": [
+                    "${workspaceFolder}"
+                ],
+                "limitSymbolsToIncludedHeaders": true
+            }
+        }
+    ],
+    "version": 4
+}

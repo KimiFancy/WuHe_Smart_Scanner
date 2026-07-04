@@ -1,0 +1,20 @@
+# Name,     Type, SubType, Offset,   Size,    Flags
+# Auto-placed partitions for the "五合云" (WuHeYun) HID-Host + HTTP cloud device.
+# Target: ESP32-S3, default 8 MB flash. Offsets left blank so ESP-IDF places them
+# densely (no gaps) and validates non-overlap at build time.
+#
+# Layout (logical order, IDF assigns real offsets):
+#   nvs        16 KB    WiFi/ble PHY + app NVS
+#   otadata     8 KB    OTA slot selection (unused by factory build, reserved)
+#   phy_init    4 KB    PHY calibration
+#   factory     1 MB    App firmware
+#   wuhe_bak  256 KB    LittleFS data partition — offline scan FIFO backup
+#
+# Total used ~1.3 MB << 8 MB; ample headroom for future OTA partitions.
+# First flash after adding this file requires: `idf.py erase-flash` (clears
+# NVS SID/MNo, acceptable per plan).
+nvs,        data, nvs,     ,         0x4000,
+otadata,    data, ota,     ,         0x2000,
+phy_init,   data, phy,     ,         0x1000,
+factory,    app,  factory, ,         3M,
+wuhe_bak,   data, littlefs,,         0x40000,

@@ -1,0 +1,23 @@
+menu "WuHeYun"
+
+    config WUHE_DEDUP_WINDOW_MS
+        int "Barcode deduplication window (ms)"
+        default 3000
+        help
+            Time window in milliseconds during which identical barcodes are
+            treated as duplicates and dropped.
+
+    config WUHE_DEDUP_CACHE_SIZE
+        int "Barcode deduplication cache size"
+        default 8
+        help
+            Maximum number of recent barcode entries kept for dedup comparison.
+
+    config WUHE_SKIP_CERT_VALIDATE
+        bool "Skip TLS certificate validation"
+        default n
+        help
+            Disable HTTPS certificate verification. Useful for testing against
+            servers with self-signed certificates. DO NOT enable in production.
+
+endmenu

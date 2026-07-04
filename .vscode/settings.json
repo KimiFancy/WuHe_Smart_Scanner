@@ -1,0 +1,20 @@
+{
+  "C_Cpp.intelliSenseEngine": "default",
+  "idf.extensionActivationMode": "always",
+  "idf.openOcdConfigs": [
+    "board/esp32s3-builtin.cfg"
+  ],
+  "idf.port": "/dev/ttyACM0",
+  "idf.currentSetup": "/home/kimi/.espressif/v6.0.1/esp-idf",
+  "idf.customExtraVars": {
+    "IDF_TARGET": "esp32s3"
+  },
+  "clangd.path": "/home/kimi/.espressif/tools/esp-clang/esp-20.1.1_20250829/esp-clang/bin/clangd",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=**",
+    "--compile-commands-dir=/home/kimi/ESP32/demo/usb_hid/hid_demo/build"
+  ],
+  "idf.flashType": "UART",
+  "idf.monitorPort": "/dev/ttyACM0"
+}
