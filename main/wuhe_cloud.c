@@ -311,6 +311,12 @@ static uint64_t dedup_ts[CONFIG_WUHE_DEDUP_CACHE_SIZE];   /* esp_timer ms */
 static uint32_t s_pack_interval_ms = WUHE_PACK_INTERVAL_DEFAULT_MS;
 static uint8_t  s_pack_max         = WUHE_PACK_MAX_DEFAULT;
 
+/* Drain backoff: after drain_backup stalls on transport failure, wait this
+ * long before the main loop tries again. Prevents hammering a dead server
+ * every cycle when WiFi is up but the HTTP endpoint is unreachable. */
+#define WUHE_DRAIN_BACKOFF_MS   60000U
+static uint64_t s_last_drain_fail_ms = 0;   /* 0 = no prior failure */
+
 /* ---- forward decls ------------------------------------------------ */
 
 static bool send_pack(scan_item_t *items, uint8_t n);
@@ -476,9 +482,13 @@ static void drain_backup(void)
         ESP_LOGI(TAG, "drain pack: n=%u", n);
         bool resolved = send_pack(batch, n);
         if (!resolved) {
-            /* Link still dead and items were re-pushed: stop to avoid spin;
-             * the rising-edge trigger will re-enter drain on next reconnect. */
-            ESP_LOGW(TAG, "drain stalled (transport fail), will retry later");
+            /* Link still dead and items were re-pushed: stop to avoid spin.
+             * Record the failure timestamp so the main loop's periodic drain
+             * check backs off instead of re-entering every cycle. The next
+             * WiFi rising-edge bypasses this backoff (intentional). */
+            s_last_drain_fail_ms = esp_timer_get_time() / 1000U;
+            ESP_LOGW(TAG, "drain stalled (transport fail), retry in %us",
+                     (unsigned)(WUHE_DRAIN_BACKOFF_MS / 1000U));
             break;
         }
         /* resolved (success or dead-letter): keep draining remaining backlog. */
@@ -568,10 +578,12 @@ bool wuhe_cloud_submit_scan(const char *code)
         strlcpy(item.code, code, sizeof(item.code));
         item.sid = sid;
         if (xQueueSend(s_queue, &item, 0) != pdTRUE) {
-            /* Queue full: drop oldest to make room, never block the HID cb. */
+            /* Queue full: relocate oldest to flash backup so drain_backup can
+             * replay it later — never silently drop scanned data. */
             scan_item_t dropped;
             xQueueReceive(s_queue, &dropped, 0);
-            ESP_LOGW(TAG, "queue full, dropped SID=%u", dropped.sid);
+            ESP_LOGW(TAG, "queue full, relocating SID=%u to backup", dropped.sid);
+            wuhe_backup_push(dropped.code, dropped.sid);
             xQueueSend(s_queue, &item, 0);
         }
     } else {
@@ -654,6 +666,22 @@ static void wuhe_cloud_task(void *arg)
             /* Offline: scans land in backup via submit; just idle. */
             vTaskDelay(pdMS_TO_TICKS(1000));
             continue;
+        }
+
+        /* Periodic drain: covers the case where WiFi stayed associated but
+         * the HTTP server was temporarily unreachable (send_pack exhausted
+         * its retries and pushed items to backup). Without this, those items
+         * would sit indefinitely — no WiFi rising-edge ever fires when only
+         * the HTTP layer went down. Backoff window prevents hammering a
+         * still-dead server every loop cycle. s_last_drain_fail_ms == 0
+         * means "never failed", allowing immediate first-attempt drain. */
+        if (wuhe_backup_count() > 0 &&
+            (s_last_drain_fail_ms == 0 ||
+             (esp_timer_get_time() / 1000U) >=
+                 s_last_drain_fail_ms + WUHE_DRAIN_BACKOFF_MS)) {
+            ESP_LOGI(TAG, "periodic drain: backup count=%u",
+                     (unsigned)wuhe_backup_count());
+            drain_backup();
         }
 
         /* ---- online: assemble one pack ---- */

@@ -41,8 +41,8 @@ typedef struct {
 /*  Constants                                                         */
 /* ------------------------------------------------------------------ */
 
-#define WUHE_ENDPOINT_LIST     "http://192.168.2.16:5000/openWeb/SaveScanDataList"
-#define WUHE_ENDPOINT_BEEP     "http://192.168.2.16:5000/openWeb/SaveScanDataWithBeep"
+#define WUHE_ENDPOINT_LIST     "http://192.168.2.15:5000/openWeb/SaveScanDataList"
+#define WUHE_ENDPOINT_BEEP     "http://192.168.2.15:5000/openWeb/SaveScanDataWithBeep"
 // #define WUHE_ENDPOINT_LIST     "https://test.wuhe1.com/openWeb/SaveScanDataList"
 // #define WUHE_ENDPOINT_BEEP     "https://test.wuhe1.com/openWeb/SaveScanDataWithBeep"
 
@@ -61,7 +61,7 @@ typedef struct {
 #define WUHE_BACKUP_MOUNT             "/wuhe_bak"
 #define WUHE_BACKUP_FILE_MAX          2000
 
-#define WUHE_RETRY_MAX               10
+#define WUHE_RETRY_MAX               5
 #define WUHE_RETRY_BACKOFF_BASE_MS    1000
 #define WUHE_RETRY_BACKOFF_CAP_MS     60000
 

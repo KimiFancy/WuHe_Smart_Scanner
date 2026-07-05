@@ -52,6 +52,42 @@ LVGL runs in its own FreeRTOS task (`example_lvgl_port_task`) protected by `_loc
 in `screen_display.c`. Any LVGL API call from another task/context **must** `_lock_acquire(&lvgl_api_lock)`
 / `_lock_release(&lvgl_api_lock)` around it. The existing display init already does this.
 
+### Cloud upload reliability (SID / queue / backup drain)
+
+The cloud upload path (`wuhe_cloud.c`) is designed for zero silent data loss.
+Three invariants that are easy to break by accident:
+
+1. **SID is allocated and persisted at scan time** (`wuhe_storage_sid_next`,
+   NVS key `"sid"` in namespace `"wuhe"`), before the upload attempt, and is
+   **never rolled back** on failure. Retries reuse the same SID so the cloud
+   sees a stable dedup key across replays. Only `idf.py erase-flash` resets it;
+   `idf.py flash` alone preserves NVS (see `partitions.csv` line 14-15).
+
+2. **`drain_backup()` has TWO trigger conditions** (OR, not AND):
+   - WiFi rising edge (`!was_connected && now_connected`) in `wuhe_cloud_task`
+   - Periodic check: online + `wuhe_backup_count() > 0` + `WUHE_DRAIN_BACKOFF_MS`
+     (60 s) elapsed since last drain stall (`s_last_drain_fail_ms`)
+
+   The periodic check is **the only** path that drains backlog when WiFi stays
+   associated but the HTTP server is unreachable (common field condition). Do
+   not remove it — the WiFi-only trigger was the original design and silently
+   lost data when only the HTTP layer went down.
+
+3. **Three-tier overflow chain, no silent drops:**
+   ```
+   scan → s_queue (RAM, 32) → send_pack → cloud
+              │ full              │ transport fail ×WUHE_RETRY_MAX
+              ▼                   ▼
+         LittleFS backup (2000) ←──┘ → drain_backup → cloud
+   ```
+   The `submit_scan` queue-full branch MUST `wuhe_backup_push(dropped)` — the
+   original code dropped silently and lost scans. LittleFS overflow (after
+   ~2032 offline scans) is the only remaining loss path.
+
+`send_pack` blocks the cloud task for the full retry window on every failure
+(`WUHE_RETRY_MAX` × timeout + exponential backoff). Keep `WUHE_RETRY_MAX`
+modest in debug builds. Params live in `wuhe_cloud.h`, some Kconfig-overridable.
+
 ## Hardware / pin map (screen_display.c)
 
 ILI9341 on **SPI2_HOST**, 320×240, color format RGB565, BGR element order:
