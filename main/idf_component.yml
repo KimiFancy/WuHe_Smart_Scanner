@@ -6,3 +6,4 @@ dependencies:
   lvgl/lvgl: ^9.5.0
   espressif/cjson: ^1.7.18
   joltwallet/littlefs: '*'
+  espressif/esp_codec_dev: ^1.5.11
