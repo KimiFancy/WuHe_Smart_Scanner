@@ -41,7 +41,8 @@ bool wuhe_backup_init(void);
  * If the FIFO is full (count == WUHE_BACKUP_FILE_MAX) the oldest entry is
  * overwritten (head advances) and a "dropped" counter is logged.
  *
- * @param code  NUL-terminated barcode string (≤ 40 chars + NUL).
+ * @param code  NUL-terminated barcode string (≤ 120 bytes including multibyte
+ *              UTF-8 sequences; see WUHE_BARCODE_MAX_BYTES in scanner_config.h).
  * @param sid   Scan ID captured at scan time (1..65535).
  * @return true on success, false on write error or unmounted module.
  */

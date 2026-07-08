@@ -13,6 +13,7 @@
 #include "freertos/semphr.h"
 
 #include "wuhe_cloud.h"  /* WUHE_BACKUP_* constants (task 2). */
+#include "scanner_config.h"   /* WUHE_BARCODE_MAX_BYTES */
 
 static const char *TAG = "wuhe.bak";
 
@@ -27,8 +28,14 @@ typedef struct {
     uint32_t count;  /* number of valid entries currently stored     */
 } wuhe_backup_idx_t;
 
-/* Entry file: binary {sid, code[41]}. 43 bytes. */
-#define WUHE_BACKUP_CODE_FIELD_LEN 41u   /* 40 chars + NUL, per task spec */
+/* Entry file: binary {sid, code[N]}. N = WUHE_BARCODE_MAX_BYTES (121).
+ * WARNING: Bumping WUHE_BACKUP_CODE_FIELD_LEN invalidates existing on-disk
+ * entries written by older firmware (different struct size). On first boot
+ * after upgrade, wuhe_backup_init's read-back may fail and trigger the
+ * format+remount fallback in wuhe_backup.c, erasing the offline backlog.
+ * This is acceptable for dev devices; for production deploy a version/magic
+ * field migration (see AGENTS.md). */
+#define WUHE_BACKUP_CODE_FIELD_LEN WUHE_BARCODE_MAX_BYTES
 typedef struct {
     uint16_t sid;
     char     code[WUHE_BACKUP_CODE_FIELD_LEN];

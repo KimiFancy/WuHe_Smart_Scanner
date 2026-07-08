@@ -16,6 +16,7 @@
 #include "wuhe_backup.h"
 #include "internet_mgr.h"
 #include "screen_display.h"
+#include "scanner_config.h"   /* WUHE_BARCODE_MAX_BYTES */
 
 #include <string.h>
 #include <stdio.h>
@@ -234,7 +235,7 @@ bool wuhe_http_post(const char *url, const char *json_body,
     int status  = 0;
     bool ok     = false;
 
-    err = esp_http_client_set_header(client, "Content-Type", "application/json");
+    err = esp_http_client_set_header(client, "Content-Type", "application/json; charset=utf-8");
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "set_header failed: %s", esp_err_to_name(err));
         goto cleanup;
@@ -297,14 +298,14 @@ cleanup:
 /* ---- A) queue item + dedup cache (file-scope) --------------------- */
 
 typedef struct {
-    char     code[41];   /* barcode + NUL (CHAR(40) per spec) */
+    char     code[WUHE_BARCODE_MAX_BYTES];   /* barcode + NUL (UTF-8, up to 40 CJK chars) */
     uint16_t sid;        /* SID captured at scan time */
 } scan_item_t;
 
 static QueueHandle_t s_queue;     /* cap 32, populated by wuhe_cloud_start */
 
 /* RAM-only dedup cache; never persisted (plan: no flash write per scan). */
-static char    dedup_code[CONFIG_WUHE_DEDUP_CACHE_SIZE][41];
+static char    dedup_code[CONFIG_WUHE_DEDUP_CACHE_SIZE][WUHE_BARCODE_MAX_BYTES];
 static uint64_t dedup_ts[CONFIG_WUHE_DEDUP_CACHE_SIZE];   /* esp_timer ms */
 
 /* Pack parameters adopted from the most recent server response. */

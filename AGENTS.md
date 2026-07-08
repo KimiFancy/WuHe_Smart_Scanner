@@ -5,14 +5,29 @@ that is hard to infer from filenames alone.
 
 ## Project
 
-ESP-IDF **USB HID Host** demo (forked from the official Espressif `usb/host_hid` example)
-extended with an **LVGL + ILI9341 LCD** UI for a "五合云" (WuHeYun) device.
+ESP-IDF **USB CDC-ACM Host** scanner demo for the "五合云" (WuHeYun) device.
+Originally forked from the official Espressif `usb/host_hid` example; the HID
+keyboard path was **fully replaced** with a CDC-ACM virtual-serial path on the
+`cdc-acm-utf8-barcode` branch (this is now the default code path).
 
 - **Target**: ESP32-S3 (Xtensa). USB-OTG required. Also buildable for S2/P4/H4 per README.
 - **ESP-IDF**: v6.0.1 at `/home/kimi/.espressif/v6.0.1/esp-idf`.
-- **Two independent subsystems share one `main` component**:
-  - `hid_host_example.c` — USB HID host (keyboard/mouse), prints reports to serial. This is the **only** subsystem wired into `app_main()`.
-  - `screen_display.c` — ILI9341 LCD + LVGL v9 UI. See "Display is orphaned" below.
+- **Scanner**: Newland NLS-FM430-EX, USB CDC-ACM mode, VID=0x1EAB PID=0x0006
+  (see `main/scanner_config.h`). Emits **UTF-8** byte streams terminated by
+  ENTER (`\r` or `\n` or `\r\n`).
+- **`main` component subsystems**:
+  - `hid_host_example.c` — USB Host Library lifecycle (`usb_lib_task`) +
+    `app_main` init sequencing. HID code removed; name kept for git-blame
+    continuity.
+  - `wuhe_cdc_scan.c` — CDC-ACM scanner task: opens by VID/PID, accumulates
+    raw UTF-8 bytes in a 121-byte buffer, dispatches barcodes on ENTER to UI +
+    cloud. This is the **only** scanner input path.
+  - `screen_display.c` — ILI9341 LCD + LVGL v9 UI.
+  - `wuhe_cloud.c` / `wuhe_backup.c` / `wuhe_storage.c` — cloud upload,
+    LittleFS offline backup, NVS SID/MNo storage.
+  - `scanner_config.h` — **single source of truth** for VID/PID and barcode
+    buffer width (`WUHE_BARCODE_MAX_BYTES = 121`, sized for 40 CJK chars in
+    UTF-8 + NUL). Bump here to widen every layer at once.
 
 ## Build / Flash
 
@@ -29,23 +44,57 @@ idf.py -p /dev/ttyACM0 flash monitor   # JTAG flash configured
 
 ## Critical gotchas
 
-### Display code is orphaned (not a bug to "fix" blindly)
-`display_start_up_pagevoid()` in `screen_display.c` is **never called** from `app_main()`.
-Out of the box, **only the HID serial output runs; the LCD stays dark.**
-If asked to "make the screen work", call `display_start_up_pagevoid(NULL)` from `app_main()`
-(after the HID driver install, or in its own task) — do not rewrite the function, it is complete.
-Confirm intent before wiring it, since the HID task blocks on its event queue.
+### CDC scanner path (replaces HID keyboard)
 
-### `MyFont` is a hand-edited file inside a managed component
-`LV_FONT_DECLARE(MyFont)` is referenced throughout `screen_display.c`, but `MyFont.c` lives at
-`managed_components/lvgl__lvgl/src/font/MyFont.c` — a **local modification to a fetched dependency**.
-It will be **silently destroyed** by any of:
-- `idf.py reconfigure` after deleting `managed_components/`
-- a version bump of `lvgl/lvgl` in `main/idf_component.yml`
-- `idf.py fullclean` followed by configure
+The scanner is a **transparent UTF-8 byte pipe**. The HID keyboard path
+(keycode2ascii, Alt+numpad escape, single-byte ASCII output) was **fully
+removed** because USB HID Keyboard Usage Page (0x07) has no codepoints for
+CJK characters — Chinese is fundamentally impossible over HID-keyboard mode.
 
-If touching fonts or upgrading LVGL, **back up `MyFont.c` first** and restore it after re-fetch,
-or (better) move it into `main/` and register it in `main/CMakeLists.txt`.
+`wuhe_cdc_scan.c` does NOT:
+- Filter bytes by `>= 0x20` (would drop UTF-8 continuation bytes 0x80-0xBF).
+- Transcode GBK→UTF-8 (the FM430-EX emits UTF-8 directly).
+- Use `cdc_acm_host_data_rx_blocking` (the callback `data_cb` is correct;
+  it returns `bool`, takes `const uint8_t *data`).
+
+`data_cb` runs in the CDC driver's own background task (single-threaded,
+no re-entrancy). Dispatch to `wuhe_ui_set_barcode_safe` (acquires LVGL
+lock internally) and `wuhe_cloud_submit_scan` (FreeRTOS queue) is
+thread-safe by design — direct call from `data_cb` is OK.
+
+### `usb_lib_task` NO_CLIENTS break (fragile, do not "fix" without thought)
+
+`usb_lib_task` in `hid_host_example.c` breaks out of its event loop on
+`USB_HOST_LIB_EVENT_FLAGS_NO_CLIENTS`. This was designed for the HID path
+where pressing BOOT uninstalls the HID driver (the only client). With CDC,
+the CDC-ACM driver is the client — as long as `cdc_acm_host_install()`
+runs before any disconnect event, the loop stays alive. Race window is
+tiny (between `usb_host_install()` and `cdc_acm_host_install()`), but if
+you see mysterious USB shutdowns on boot, this is the suspect.
+
+### Display is wired in (was orphaned before this branch)
+
+`display_start_up_pagevoid(NULL)` is called from `app_main()` BEFORE
+`wuhe_cdc_start()`. The LCD shows the WuHeYun UI at boot — no longer dark.
+
+### Backup migration on width bump
+
+`WUHE_BACKUP_CODE_FIELD_LEN` in `wuhe_backup.c` is now `WUHE_BARCODE_MAX_BYTES`
+(121). On-disk `wuhe_backup_entry_t` grew from 43 → 123 bytes. **Existing
+LittleFS backup files from older firmware will be misread** on first boot
+after upgrade; `wuhe_backup_init`'s read-back failure triggers its
+format+remount fallback, erasing the offline backlog. Acceptable for dev;
+for production deploy a magic/version field migration.
+
+### `MyFont.c` lives in `main/` (was in managed_components)
+
+`LV_FONT_DECLARE(MyFont)` is referenced throughout `screen_display.c`.
+`MyFont.c` was moved out of `managed_components/lvgl__lvgl/src/font/` into
+`main/MyFont.c` and registered in `main/CMakeLists.txt` SRCS. **It is now
+safe** from `idf.py reconfigure`, `fullclean`, and LVGL version bumps.
+
+If you ever move it back (don't), the old gotcha applies: any re-fetch of
+`lvgl/lvgl` would silently destroy local modifications to the managed copy.
 
 ### Cross-task LVGL access
 LVGL runs in its own FreeRTOS task (`example_lvgl_port_task`) protected by `_lock_t lvgl_api_lock`
@@ -99,7 +148,7 @@ ILI9341 on **SPI2_HOST**, 320×240, color format RGB565, BGR element order:
 | MISO | 37 | CS | 38 |
 | BK light | 45 | Touch CS | 15 (unused, touch disabled) |
 
-- **GPIO0 = APP_QUIT_PIN** (the BOOT button). Falling edge uninstalls the HID driver — pressing BOOT during operation tears down USB.
+- **GPIO0 = APP_QUIT_PIN** (the BOOT button). Falling-edge ISR is registered but currently a **no-op stub** — the CDC/cloud/LVGL tasks run indefinitely. Wired for future graceful-shutdown use.
 - LCD pixel clock 20 MHz, DMA-backed dual draw buffers (20 lines each).
 - Several alternative pinouts are left commented-out in `screen_display.c` (the previous wiring: SCLK18/MOSI19/MISO21/DC5/RST3/CS4/BK2). Don't "clean them up" — they document prior hardware revisions.
 
@@ -107,7 +156,7 @@ ILI9341 on **SPI2_HOST**, 320×240, color format RGB565, BGR element order:
 
 - All app source is in `main/`. Register new `.c` files in `main/CMakeLists.txt` `SRCS`.
 - `main/CMakeLists.txt` declares `PRIV_REQUIRES esp_timer esp_driver_gpio`. LCD/SPI/USB-HID symbols come transitively via the managed components in `main/idf_component.yml` — add new external components there, not by hand.
-- The public UI update functions (`wuhe_ui_set_warehouse`, `wuhe_ui_set_post`, `wuhe_ui_set_barcode`, `wifi_signal_set_rssi`) are the intended integration points for feeding data into the UI from the HID side. They are currently uncalled.
+- The public UI update functions (`wuhe_ui_set_warehouse`, `wuhe_ui_set_post`, `wuhe_ui_set_barcode`, `wifi_signal_set_rssi`) are the intended integration points for feeding data into the UI. `wuhe_ui_set_barcode_safe` is called from `wuhe_cdc_scan.c`'s `data_cb` on every scan; the others remain uncalled (server-response-driven).
 - No tests, no linter, no formatter configured. Verification = `idf.py build` exits 0 + flash + serial monitor.
 
 ## Dev environment
