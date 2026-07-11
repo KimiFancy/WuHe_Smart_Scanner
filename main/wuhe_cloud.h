@@ -41,8 +41,8 @@ typedef struct {
 /*  Constants                                                         */
 /* ------------------------------------------------------------------ */
 
-#define WUHE_ENDPOINT_LIST     "http://192.168.2.17:5000/openWeb/SaveScanDataList"
-#define WUHE_ENDPOINT_BEEP     "http://192.168.2.17:5000/openWeb/SaveScanDataWithBeep"
+#define WUHE_ENDPOINT_LIST     "http://192.168.2.15:5000/openWeb/SaveScanDataList"
+#define WUHE_ENDPOINT_BEEP     "http://192.168.2.15:5000/openWeb/SaveScanDataWithBeep"
 // #define WUHE_ENDPOINT_LIST     "https://test.wuhe1.com/openWeb/SaveScanDataList"
 // #define WUHE_ENDPOINT_BEEP     "https://test.wuhe1.com/openWeb/SaveScanDataWithBeep"
 

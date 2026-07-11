@@ -12,16 +12,19 @@ keyboard path was **fully replaced** with a CDC-ACM virtual-serial path on the
 
 - **Target**: ESP32-S3 (Xtensa). USB-OTG required. Also buildable for S2/P4/H4 per README.
 - **ESP-IDF**: v6.0.1 at `/home/kimi/.espressif/v6.0.1/esp-idf`.
-- **Scanner**: Newland NLS-FM430-EX, USB CDC-ACM mode, VID=0x1EAB PID=0x0006
-  (see `main/scanner_config.h`). Emits **UTF-8** byte streams terminated by
-  ENTER (`\r` or `\n` or `\r\n`).
+- **Scanner**: CX70 (was Newland NLS-FM430-EX), USB CDC-ACM mode,
+  VID=0x0218 PID=0x0212 (see `main/scanner_config.h`). Emits **GBK** byte
+  streams terminated by ENTER (`\r` or `\n` or `\r\n`); firmware transcodes
+  GBK→UTF-8 at dispatch time (see `gbk_utf8.c` / `gbk_table.c`).
 - **`main` component subsystems**:
   - `hid_host_example.c` — USB Host Library lifecycle (`usb_lib_task`) +
     `app_main` init sequencing. HID code removed; name kept for git-blame
     continuity.
   - `wuhe_cdc_scan.c` — CDC-ACM scanner task: opens by VID/PID, accumulates
-    raw UTF-8 bytes in a 121-byte buffer, dispatches barcodes on ENTER to UI +
-    cloud. This is the **only** scanner input path.
+    raw GBK bytes in a 121-byte buffer, dispatches barcodes on ENTER to UI +
+    cloud after GBK→UTF-8 transcoding. This is the **only** scanner input path.
+  - `gbk_utf8.c` / `gbk_table.c` — GBK→UTF-8 transcoder + ~47 KiB generated
+    lookup table (21791 entries). Regenerate with `python3 tools/gen_gbk_table.py`.
   - `screen_display.c` — ILI9341 LCD + LVGL v9 UI.
   - `wuhe_cloud.c` / `wuhe_backup.c` / `wuhe_storage.c` — cloud upload,
     LittleFS offline backup, NVS SID/MNo storage.
@@ -46,14 +49,16 @@ idf.py -p /dev/ttyACM0 flash monitor   # JTAG flash configured
 
 ### CDC scanner path (replaces HID keyboard)
 
-The scanner is a **transparent UTF-8 byte pipe**. The HID keyboard path
-(keycode2ascii, Alt+numpad escape, single-byte ASCII output) was **fully
-removed** because USB HID Keyboard Usage Page (0x07) has no codepoints for
-CJK characters — Chinese is fundamentally impossible over HID-keyboard mode.
+The scanner is a **GBK byte pipe with firmware-side GBK→UTF-8 transcoding**.
+The HID keyboard path (keycode2ascii, Alt+numpad escape, single-byte ASCII
+output) was **fully removed** because USB HID Keyboard Usage Page (0x07) has
+no codepoints for CJK characters — Chinese is fundamentally impossible over
+HID-keyboard mode.
 
 `wuhe_cdc_scan.c` does NOT:
-- Filter bytes by `>= 0x20` (would drop UTF-8 continuation bytes 0x80-0xBF).
-- Transcode GBK→UTF-8 (the FM430-EX emits UTF-8 directly).
+- Filter bytes by `>= 0x20` (would drop GBK trail bytes 0x40-0xFE).
+- Pass raw bytes to LVGL/cloud — `dispatch_barcode()` runs `gbk_to_utf8()`
+  first; downstream only ever sees UTF-8.
 - Use `cdc_acm_host_data_rx_blocking` (the callback `data_cb` is correct;
   it returns `bool`, takes `const uint8_t *data`).
 

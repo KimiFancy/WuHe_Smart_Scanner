@@ -1,17 +1,18 @@
 /**
  * @file wuhe_cdc_scan.c
- * @brief CDC-ACM Host RX layer for the Newland NLS-FM430-EX barcode scanner.
+ * @brief CDC-ACM Host RX layer for the barcode scanner (CX70 / FM430-EX).
  *
  * === Design overview =================================================
  *
  * The scanner operates in CDC-ACM (virtual serial port) mode and emits a raw
- * UTF-8 byte stream for every scan, terminated by ENTER (\r, \n, or \r\n).
+ * GBK byte stream for every scan, terminated by ENTER (\r, \n, or \r\n).
  *
- * This module is a *transparent UTF-8 byte pipe*:
- *   - No GBK → UTF-8 transcoding (the scanner already speaks UTF-8).
- *   - No byte filtering — UTF-8 continuation bytes (0x80–0xBF) and lead bytes
- *     (0xC0–0xFF) pass through untouched. The old HID path filtered
- *     `>= 0x20`; that would corrupt multibyte sequences here.
+ * This module is a GBK byte pipe with firmware-side transcoding:
+ *   - GBK → UTF-8 transcoding happens in dispatch_barcode() via gbk_to_utf8()
+ *     (gbk_utf8.c). LVGL and the cloud JSON layer only ever see UTF-8.
+ *   - No byte filtering — GBK lead/trail bytes (0x81–0xFE) pass through the
+ *     accumulator untouched. The old HID path filtered `>= 0x20`; that would
+ *     drop legitimate GBK trail bytes here.
  *   - The only framing logic is terminator detection: \r or \n ends a barcode.
  *     A \r\n pair produces exactly one dispatch (the second byte sees an empty
  *     accumulator and is a no-op).
@@ -35,10 +36,12 @@
  *
  * === Buffer sizing ===================================================
  *
- * s_barcode_buf is WUHE_BARCODE_MAX_BYTES (121) wide — sized for 40 CJK
- * characters in UTF-8 + NUL. On overflow the partial barcode is dispatched
- * (truncated) with a warning and the accumulator resets; we never write past
- * the buffer end.
+ * s_barcode_buf holds raw GBK bytes (up to WUHE_BARCODE_MAX_BYTES-1 = 120).
+ * dispatch_barcode() transcodes to a UTF-8 buffer of the same width; since GBK
+ * CJK is 2 bytes and UTF-8 CJK is 3 bytes, at most 40 CJK characters survive
+ * the transcode (120 UTF-8 bytes + NUL = 121). On overflow the partial barcode
+ * is dispatched (truncated on a character boundary) with a warning and the
+ * accumulator resets; we never write past the buffer end.
  */
 
 #include "wuhe_cdc_scan.h"
@@ -57,6 +60,7 @@
 #include "usb/usb_host.h"
 
 #include "scanner_config.h"   /* SCANNER_VID, SCANNER_PID, WUHE_BARCODE_MAX_BYTES */
+#include "gbk_utf8.h"         /* gbk_to_utf8 */
 #include "wuhe_cloud.h"       /* wuhe_cloud_submit_scan */
 #include "screen_display.h"   /* wuhe_ui_set_barcode_safe */
 
@@ -92,14 +96,21 @@ static void dispatch_barcode(void)
     s_barcode_buf[s_barcode_len] = '\0';
 
     if (s_barcode_len > 0) {
-        size_t dump_len = s_barcode_len < 32 ? s_barcode_len : 32;
-        ESP_LOGI(TAG, "scan received (%zu bytes): '%s'",
-                 s_barcode_len, (const char *)s_barcode_buf);
-        ESP_LOG_BUFFER_HEXDUMP(TAG, s_barcode_buf, dump_len, ESP_LOG_INFO);
+        /* Scanner emits GBK; LVGL and the cloud JSON layer require UTF-8.
+         * Output is capped to WUHE_BARCODE_MAX_BYTES (121), truncating on a
+         * character boundary so downstream buffers never split a multibyte
+         * sequence. Worst case 80 GBK bytes (40 CJK) -> 120 UTF-8 + NUL. */
+        char utf8[WUHE_BARCODE_MAX_BYTES];
+        size_t utf8_len = gbk_to_utf8(s_barcode_buf, s_barcode_len,
+                                      utf8, sizeof(utf8));
 
-        /* Both targets are thread-safe: LVGL lock / FreeRTOS queue. */
-        wuhe_ui_set_barcode_safe((const char *)s_barcode_buf);
-        wuhe_cloud_submit_scan((const char *)s_barcode_buf);
+        size_t dump_len = utf8_len < 32 ? utf8_len : 32;
+        ESP_LOGI(TAG, "scan received (%zu GBK -> %zu UTF-8 bytes): '%s'",
+                 s_barcode_len, utf8_len, utf8);
+        ESP_LOG_BUFFER_HEXDUMP(TAG, utf8, dump_len, ESP_LOG_INFO);
+
+        wuhe_ui_set_barcode_safe(utf8);
+        wuhe_cloud_submit_scan(utf8);
     }
 
     s_barcode_len = 0;
@@ -112,9 +123,10 @@ static void dispatch_barcode(void)
 /**
  * @brief CDC-ACM data RX callback.
  *
- * Accumulates raw bytes into s_barcode_buf. On \r or \n the accumulated
- * barcode is dispatched. UTF-8 multibyte sequences flow through untouched
- * (no >= 0x20 filter — that would drop continuation bytes 0x80-0xBF).
+ * Accumulates raw GBK bytes into s_barcode_buf. On \r or \n the accumulated
+ * barcode is dispatched (dispatch_barcode transcodes GBK→UTF-8 before
+ * forwarding). GBK lead/trail bytes flow through untouched (no >= 0x20
+ * filter — that would drop legitimate GBK trail bytes 0x40-0xFE).
  *
  * Returns true = data consumed → flush the driver's internal RX buffer.
  */

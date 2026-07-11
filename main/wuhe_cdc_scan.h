@@ -10,12 +10,12 @@ extern "C" {
 
 /**
  * @file wuhe_cdc_scan.h
- * @brief CDC-ACM Host RX layer for the Newland NLS-FM430-EX barcode scanner.
+ * @brief CDC-ACM Host RX layer for the barcode scanner (CX70 / FM430-EX).
  *
  * Replaces the former HID-keyboard-mode scanning path with a CDC-ACM (virtual
- * serial) byte pipe. The scanner emits UTF-8 directly — no GBK→UTF-8 transcode
- * is needed, and every byte (including 0x80-0xBF UTF-8 continuation bytes)
- * flows through untouched.
+ * serial) byte pipe. The scanner emits GBK; dispatch_barcode() transcodes
+ * GBK→UTF-8 (via gbk_to_utf8) before forwarding to LVGL and the cloud queue,
+ * so downstream code only ever sees UTF-8.
  *
  * wuhe_cdc_start() spawns a FreeRTOS task that:
  *   1. Installs the CDC-ACM host driver (the USB Host Library must already be
@@ -24,7 +24,8 @@ extern "C" {
  *      device appears.
  *   3. Lets the driver's data_cb accumulate raw bytes into a barcode buffer
  *      until an ENTER terminator (\r or \n) is seen, then dispatches the
- *      barcode to the LVGL UI and the cloud upload queue.
+ *      barcode (after GBK→UTF-8 transcoding) to the LVGL UI and the cloud
+ *      upload queue.
  *   4. On USB disconnect, closes the device and loops back to step 2.
  */
 

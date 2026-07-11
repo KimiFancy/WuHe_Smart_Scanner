@@ -16,10 +16,10 @@
 
 /* ---- USB device identity ----------------------------------------- */
 
-/** Newland NLS-FM430-EX scanner USB Vendor ID. */
-#define SCANNER_VID   0x1EABu
-/** Newland NLS-FM430-EX scanner USB Product ID (CDC-ACM mode). */
-#define SCANNER_PID   0x0006u
+/** CX70 barcode scanner USB Vendor ID. */
+#define SCANNER_VID   0x0218u
+/** CX70 barcode scanner USB Product ID (CDC-ACM mode). */
+#define SCANNER_PID   0x0212u
 
 /* ---- Barcode buffer sizing --------------------------------------- */
 
