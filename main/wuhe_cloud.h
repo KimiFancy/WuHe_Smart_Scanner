@@ -35,16 +35,17 @@ typedef struct {
     uint8_t beep_loop;          /* Beep repeat count (0 = silent)                 */
     uint8_t beep_time;          /* Beep duration per cycle (units of 100 ms?)     */
     uint16_t beep_interval;     /* Gap between beeps (ms)                          */
+    uint32_t rgb;               /* LED color: R*1000000+G*1000+B (0-255). e.g. 200100050=R200 G100 B50 */
 } wuhe_response_t;
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                         */
 /* ------------------------------------------------------------------ */
 
-#define WUHE_ENDPOINT_LIST     "http://192.168.2.15:5000/openWeb/SaveScanDataList"
-#define WUHE_ENDPOINT_BEEP     "http://192.168.2.15:5000/openWeb/SaveScanDataWithBeep"
-// #define WUHE_ENDPOINT_LIST     "https://test.wuhe1.com/openWeb/SaveScanDataList"
-// #define WUHE_ENDPOINT_BEEP     "https://test.wuhe1.com/openWeb/SaveScanDataWithBeep"
+// #define WUHE_ENDPOINT_LIST     "http://192.168.2.15:5000/openWeb/SaveScanDataList"
+// #define WUHE_ENDPOINT_BEEP     "http://192.168.2.15:5000/openWeb/SaveScanDataWithBeep"
+#define WUHE_ENDPOINT_LIST     "https://test.wuhe1.com/OpenWeb/SaveScanDataList"
+#define WUHE_ENDPOINT_BEEP     "https://test.wuhe1.com/OpenWeb/SaveScanDataWithBeep"
 
 #define WUHE_WORK_MODE_SCAN      1
 #define WUHE_WORK_MODE_HEARTBEAT 2

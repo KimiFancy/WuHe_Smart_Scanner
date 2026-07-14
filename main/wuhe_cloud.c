@@ -180,6 +180,8 @@ bool wuhe_parse_response_json(const char *body, wuhe_response_t *out)
         out->beep_interval = (uint16_t)v;
     }
 
+    if (get_number(r, "RGB", &v))          { out->rgb = v; }
+
     get_string(r, "RCode",       out->rcode,       sizeof(out->rcode));
     get_string(r, "Note01",      out->note01,      sizeof(out->note01));
     get_string(r, "Note02",      out->note02,      sizeof(out->note02));
@@ -210,7 +212,7 @@ bool wuhe_http_post(const char *url, const char *json_body,
 
     esp_http_client_config_t config = {
         .url             = url,
-        .transport_type  = HTTP_TRANSPORT_OVER_TCP,
+        .transport_type  = HTTP_TRANSPORT_OVER_SSL,
         .method          = HTTP_METHOD_POST,
         .timeout_ms      = WUHE_HTTP_TIMEOUT_MS,
 #ifdef CONFIG_WUHE_SKIP_CERT_VALIDATE
@@ -363,6 +365,14 @@ void wuhe_cloud_apply_response(const wuhe_response_t *r)
     }
     wuhe_beep_notify(r);
 
+    if (r->rgb > 0) {
+        ESP_LOGI(TAG, "led: rgb=%u (R=%u G=%u B=%u)",
+                 (unsigned)r->rgb,
+                 (unsigned)(r->rgb / 1000000U),
+                 (unsigned)((r->rgb / 1000U) % 1000U),
+                 (unsigned)(r->rgb % 1000U));
+    }
+
     if (r->restart == 1) {
         ESP_LOGI(TAG, "server requested restart (ReStart=1), rebooting...");
         vTaskDelay(pdMS_TO_TICKS(500));
@@ -416,7 +426,7 @@ static bool send_pack(scan_item_t *items, uint8_t n)
     bool resolved = false;   /* set true on success (RID==0) or dead-letter (RID!=0) */
 
     for (uint8_t k = 0; k < WUHE_RETRY_MAX; k++) {
-        if (wuhe_http_post(WUHE_ENDPOINT_BEEP, body, resp_buf, sizeof(resp_buf))) {
+        if (wuhe_http_post(WUHE_ENDPOINT_LIST, body, resp_buf, sizeof(resp_buf))) {
             wuhe_response_t resp;
             if (wuhe_parse_response_json(resp_buf, &resp)) {
                 if (resp.rid == 0) {
@@ -524,7 +534,7 @@ static void send_heartbeat(void)
     }
 
     char resp_buf[WUHE_RESP_BUF_SIZE];
-    if (wuhe_http_post(WUHE_ENDPOINT_BEEP, body, resp_buf, sizeof(resp_buf))) {
+    if (wuhe_http_post(WUHE_ENDPOINT_LIST, body, resp_buf, sizeof(resp_buf))) {
         wuhe_response_t resp;
         if (wuhe_parse_response_json(resp_buf, &resp)) {
             if (resp.rid == 0) {
@@ -630,7 +640,7 @@ static void wuhe_cloud_task(void *arg)
         char *body = wuhe_request_to_string(&req);
         if (body != NULL) {
             char resp_buf[WUHE_RESP_BUF_SIZE];
-            if (wuhe_http_post(WUHE_ENDPOINT_BEEP, body, resp_buf, sizeof(resp_buf))) {
+            if (wuhe_http_post(WUHE_ENDPOINT_LIST, body, resp_buf, sizeof(resp_buf))) {
                 wuhe_response_t resp;
                 if (wuhe_parse_response_json(resp_buf, &resp)) {
                     if (resp.rid == 0) {

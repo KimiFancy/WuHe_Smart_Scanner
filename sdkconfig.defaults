@@ -10,9 +10,6 @@ CONFIG_ESPTOOLPY_FLASHSIZE="8MB"
 # Custom partition table (factory 3M + littlefs wuhe_bak backup partition)
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
-
-# Debug-only: bypass TLS cert verification for local self-signed debug server.
-# REMOVE before any production build.
-CONFIG_WUHE_SKIP_CERT_VALIDATE=y
-CONFIG_ESP_TLS_INSECURE=y
-CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY=y
+# HTTPS uses the IDF built-in CA bundle (crt_bundle_attach) which already
+# includes ISRG Root X1/X2 — required for test.wuhe1.com's ECDSA chain.
+# Do NOT re-enable ESP_TLS_INSECURE / SKIP_SERVER_CERT_VERIFY in production.
